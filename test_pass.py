@@ -1,11 +1,32 @@
+import pytest
 import torch
 
-from train_gpt2 import Block, GPTConfig
+from config import GPTConfig
+from gqa_attention import GroupedQueryAttention
+from train_gpt2 import Block
+
+HIDDEN_DIM = 768
 
 
-def test_vanilla_block():
-    config = GPTConfig(vocab_size=100, n_layer=12, n_head=12, n_embd=768)
+@pytest.fixture
+def x() -> torch.Tensor:
+    return torch.randn(2, 128, HIDDEN_DIM)
+
+
+def test_gqa(x: torch.Tensor) -> None:
+    gqa = GroupedQueryAttention(12, HIDDEN_DIM, 4)
+    gqa(x)
+
+
+def test_vanilla_block(x: torch.Tensor) -> None:
+    config = GPTConfig(vocab_size=100, n_layer=12, n_head=12, n_embd=HIDDEN_DIM, n_kv_head=None)
     block = Block(config)
 
-    x = torch.randn(1, 128, 768)
+    block(x)
+
+
+def test_gqa_block(x: torch.Tensor) -> None:
+    config = GPTConfig(vocab_size=100, n_layer=12, n_head=12, n_embd=768, n_kv_head=4)
+    block = Block(config)
+
     block(x)

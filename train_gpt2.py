@@ -5,7 +5,6 @@ import math
 import os
 import sys
 import uuid
-from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -17,42 +16,15 @@ from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from activation import SwiGLU
+from config import GPTConfig
+from gqa_attention import CausalSelfAttentionGQA
+from rotary_embeddings import Rotary, apply_rotary_emb
 
 with open(sys.argv[0]) as f:
     code = f.read()
 
 # -----------------------------------------------------------------------------
 # PyTorch nn.Module definitions for the GPT-2 model
-
-
-class Rotary(torch.nn.Module):
-    def __init__(self, dim, base=10000):
-        super().__init__()
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
-        self.register_buffer("inv_freq", inv_freq)
-        self.seq_len_cached = None
-        self.cos_cached = None
-        self.sin_cached = None
-
-    def forward(self, x):
-        seq_len = x.shape[1]
-        if seq_len != self.seq_len_cached:
-            self.seq_len_cached = seq_len
-            t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
-            freqs = torch.outer(t, self.inv_freq).to(x.device)
-            self.cos_cached = freqs.cos()
-            self.sin_cached = freqs.sin()
-        return self.cos_cached[None, :, None, :], self.sin_cached[None, :, None, :]
-
-
-def apply_rotary_emb(x, cos, sin):
-    assert x.ndim == 4  # multihead attention
-    d = x.shape[3] // 2
-    x1 = x[..., :d]
-    x2 = x[..., d:]
-    y1 = x1 * cos + x2 * sin
-    y2 = x1 * (-sin) + x2 * cos
-    return torch.cat([y1, y2], 3)
 
 
 def rmsnorm(x0, eps=1e-6):
@@ -96,9 +68,11 @@ class CausalSelfAttention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
-        self.attn = CausalSelfAttention(config)
+        self.attn = (
+            CausalSelfAttentionGQA(config) if config.n_kv_head else CausalSelfAttention(config)
+        )
         self.swiglu = SwiGLU(config.n_embd, 4 * config.n_embd)
         self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
 
@@ -109,14 +83,6 @@ class Block(nn.Module):
 
 # -----------------------------------------------------------------------------
 # The main GPT-2 model
-
-
-@dataclass
-class GPTConfig:
-    vocab_size: int = 50257
-    n_layer: int = 12
-    n_head: int = 12
-    n_embd: int = 768
 
 
 class GPT(nn.Module):
@@ -412,10 +378,12 @@ if __name__ == "__main__":
     # init the model from scratch
     num_vocab = 50257
     model_config = {
-        "d12": GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=12, n_embd=768),  # 124M GPT-2
-        "d24": GPTConfig(vocab_size=num_vocab, n_layer=24, n_head=16, n_embd=1024),
-        "d36": GPTConfig(vocab_size=num_vocab, n_layer=36, n_head=20, n_embd=1280),
-        "d48": GPTConfig(vocab_size=num_vocab, n_layer=48, n_head=25, n_embd=1600),
+        "d12": GPTConfig(
+            vocab_size=num_vocab, n_layer=12, n_head=12, n_embd=768, n_kv_head=4
+        ),  # 124M GPT-2
+        "d24": GPTConfig(vocab_size=num_vocab, n_layer=24, n_head=16, n_embd=1024, n_kv_head=4),
+        "d36": GPTConfig(vocab_size=num_vocab, n_layer=36, n_head=20, n_embd=1280, n_kv_head=4),
+        "d48": GPTConfig(vocab_size=num_vocab, n_layer=48, n_head=25, n_embd=1600, n_kv_head=5),
     }[args.model]
     model = GPT(model_config)
     model = model.train().cuda()
