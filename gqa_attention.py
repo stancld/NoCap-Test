@@ -21,7 +21,6 @@ class GroupedQueryAttention(nn.Module):
         self.head_dim = n_embd // n_head
         self.num_query_groups = n_head // n_kv_head  # How many query heads per kv head
 
-        # Fuse query, key, value projection
         self.qkv_proj = nn.Linear(
             n_embd, n_head * self.head_dim + 2 * n_kv_head * self.head_dim, bias=False
         )
@@ -59,13 +58,10 @@ class GroupedQueryAttention(nn.Module):
         k = self._repeat_kv(k)
         v = self._repeat_kv(v)
 
-        # Transpose for attention: (batch, n_head, seq_len, head_dim)
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
         # Apply scaled dot product attention
-        y = nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True)
+        y = nn.functional.scaled_dot_product_attention(
+            q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True
+        )
 
         # Transpose back and reshape: (batch, seq_len, n_embd)
         y = y.transpose(1, 2).contiguous().view(batch_size, seq_len, self.n_embd)

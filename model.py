@@ -19,7 +19,7 @@ class Block(nn.Module):
         self.swiglu = SwiGLU(config.n_embd, 4 * config.n_embd)
         self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn_scale * self.attn(rmsnorm(x))
         return x + self.swiglu(rmsnorm(x))
 
@@ -33,7 +33,7 @@ class BaselineBlock(nn.Module):
         self.mlp = MLP(config)
         self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn_scale * self.attn(rmsnorm(x))
         return x + self.mlp(rmsnorm(x))
 
@@ -60,7 +60,9 @@ class GPT(nn.Module):
             self.lm_head.weight
         )  # https://paperswithcode.com/method/weight-tying
 
-    def forward(self, idx, targets=None, return_logits=True):
+    def forward(
+        self, idx: torch.Tensor, targets: torch.Tensor | None = None, return_logits: bool = True
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         _b, t = idx.size()
         _pos = torch.arange(0, t, dtype=torch.long, device=idx.device)  # shape (t)
 
@@ -88,13 +90,15 @@ class GPT(nn.Module):
 
         return logits, loss
 
-    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
+    def configure_optimizers(
+        self, weight_decay: float, learning_rate: float, betas: tuple[float, float], device_type
+    ) -> torch.optim.Optimizer:
         return torch.optim.AdamW(
             self.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=betas
         )
 
 
-def rmsnorm(x0, eps=1e-6):
+def rmsnorm(x0: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     x = x0.float()
     x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
     return x.type_as(x0)
