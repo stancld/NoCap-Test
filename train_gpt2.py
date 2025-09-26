@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import glob
-import math
 import os
 import sys
 import uuid
@@ -10,147 +9,17 @@ import numpy as np
 import torch
 import torch._inductor.config as config
 import torch.distributed as dist
-import torch.nn.functional as F
-from torch import nn
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from activation import SwiGLU
-from baseline_mlp import MLP
 from config import GPTConfig
-from gqa_attention import CausalSelfAttentionGQA
-from rotary_embeddings import Rotary, apply_rotary_emb
+from model import GPT
 
 with open(sys.argv[0]) as f:
     code = f.read()
 
 # -----------------------------------------------------------------------------
 # PyTorch nn.Module definitions for the GPT-2 model
-
-
-def rmsnorm(x0, eps=1e-6):
-    x = x0.float()
-    x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
-    return x.type_as(x0)
-
-
-class CausalSelfAttention(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.head_dim = self.n_embd // self.n_head
-        assert self.n_embd % self.n_head == 0
-        # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd, bias=False)
-        # output projection
-        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.rotary = Rotary(self.head_dim)
-
-    def forward(self, x):
-        B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        qkv = self.c_attn(x)
-        q, k, v = qkv.split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, self.head_dim)
-        q = q.view(B, T, self.n_head, self.head_dim)
-        v = v.view(B, T, self.n_head, self.head_dim)
-        cos, sin = self.rotary(q)
-        q = apply_rotary_emb(q, cos, sin)
-        k = apply_rotary_emb(k, cos, sin)
-        y = F.scaled_dot_product_attention(
-            q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True
-        )
-        y = (
-            y.transpose(1, 2).contiguous().view(B, T, C)
-        )  # re-assemble all head outputs side by side
-        # output projection
-        return self.c_proj(y)
-
-
-class Block(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
-        super().__init__()
-        self.attn = (
-            CausalSelfAttentionGQA(config) if config.n_kv_head else CausalSelfAttention(config)
-        )
-        self.swiglu = SwiGLU(config.n_embd, 4 * config.n_embd)
-        self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
-
-    def forward(self, x):
-        x = x + self.attn_scale * self.attn(rmsnorm(x))
-        return x + self.swiglu(rmsnorm(x))
-
-
-class BaselineBlock(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
-        super().__init__()
-        self.attn = (
-            CausalSelfAttentionGQA(config) if config.n_kv_head else CausalSelfAttention(config)
-        )
-        self.mlp = MLP(config)
-        self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
-
-    def forward(self, x):
-        x = x + self.attn_scale * self.attn(rmsnorm(x))
-        return x + self.mlp(rmsnorm(x))
-
-
-# -----------------------------------------------------------------------------
-# The main GPT-2 model
-
-
-class GPT(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
-        super().__init__()
-        self.config = config
-
-        block_module = BaselineBlock if config.activation_fn == "gelu" else Block
-
-        self.transformer = nn.ModuleDict(
-            dict(
-                wte=nn.Embedding(config.vocab_size, config.n_embd),
-                h=nn.ModuleList([block_module(config) for _ in range(config.n_layer)]),
-            )
-        )
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        self.transformer.wte.weight = (
-            self.lm_head.weight
-        )  # https://paperswithcode.com/method/weight-tying
-
-    def forward(self, idx, targets=None, return_logits=True):
-        _b, t = idx.size()
-        _pos = torch.arange(0, t, dtype=torch.long, device=idx.device)  # shape (t)
-
-        # forward the GPT model itself
-        x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
-
-        for block in self.transformer.h:
-            x = block(x)
-        x = rmsnorm(x)
-
-        if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
-            loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1
-            )
-        else:
-            # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :])  # note: using list [-1] to preserve the time dim
-            loss = None
-
-        # there are performance reasons why not returning logits is prudent, if not needed
-        if not return_logits:
-            logits = None
-
-        return logits, loss
-
-    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
-        return torch.optim.AdamW(
-            self.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=betas
-        )
-
 
 # -----------------------------------------------------------------------------
 # Our own simple Distributed Data Loader
