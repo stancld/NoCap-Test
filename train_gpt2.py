@@ -16,6 +16,7 @@ from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from activation import SwiGLU
+from baseline_mlp import MLP
 from config import GPTConfig
 from gqa_attention import CausalSelfAttentionGQA
 from rotary_embeddings import Rotary, apply_rotary_emb
@@ -81,19 +82,33 @@ class Block(nn.Module):
         return x + self.swiglu(rmsnorm(x))
 
 
+class BaselineBlock(nn.Module):
+    def __init__(self, config: GPTConfig) -> None:
+        super().__init__()
+        self.attn = CausalSelfAttention(config)
+        self.mlp = MLP(config)
+        self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
+
+    def forward(self, x):
+        x = x + self.attn_scale * self.attn(rmsnorm(x))
+        return x + self.mlp(rmsnorm(x))
+
+
 # -----------------------------------------------------------------------------
 # The main GPT-2 model
 
 
 class GPT(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig) -> None:
         super().__init__()
         self.config = config
+
+        block_module = BaselineBlock if config.activation_fn == "gelu" else Block
 
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
-                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                h=nn.ModuleList([block_module(config) for _ in range(config.n_layer)]),
             )
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
@@ -328,7 +343,7 @@ if __name__ == "__main__":
 
     # args error checking and convenience variables
     B, T = args.batch_size, args.sequence_length
-    assert args.model in {"d12", "d24", "d36", "d48"}
+    assert args.model in {"d12", "d24", "d36", "d48", "baseline"}
     # set up DDP (distributed data parallel). torchrun sets this env variable
     # use of DDP atm demands CUDA, we set the device appropriately according to rank
     assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
@@ -378,6 +393,14 @@ if __name__ == "__main__":
     # init the model from scratch
     num_vocab = 50257
     model_config = {
+        "baseline": GPTConfig(
+            vocab_size=num_vocab,
+            n_layer=12,
+            n_head=12,
+            n_embd=768,
+            n_kv_head=None,
+            activation_fn="gelu",
+        ),  # 124M GPT-2
         "d12": GPTConfig(
             vocab_size=num_vocab, n_layer=12, n_head=12, n_embd=768, n_kv_head=4
         ),  # 124M GPT-2

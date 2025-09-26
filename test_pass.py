@@ -3,7 +3,7 @@ import torch
 
 from config import GPTConfig
 from gqa_attention import GroupedQueryAttention
-from train_gpt2 import Block
+from train_gpt2 import BaselineBlock, Block
 
 HIDDEN_DIM = 768
 
@@ -16,6 +16,20 @@ def x() -> torch.Tensor:
 def test_gqa(x: torch.Tensor) -> None:
     gqa = GroupedQueryAttention(12, HIDDEN_DIM, 4)
     gqa(x)
+
+
+def test_baseline_block(x: torch.Tensor) -> None:
+    config = GPTConfig(
+        vocab_size=100,
+        n_layer=12,
+        n_head=12,
+        n_embd=HIDDEN_DIM,
+        n_kv_head=None,
+        activation_fn="gelu",
+    )
+    block = BaselineBlock(config)
+
+    block(x)
 
 
 def test_vanilla_block(x: torch.Tensor) -> None:

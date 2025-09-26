@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Literal
 
 
 @dataclasses.dataclass
@@ -8,3 +9,5 @@ class GPTConfig:
     n_head: int = 12
     n_embd: int = 768
     n_kv_head: int | None = 4
+
+    activation_fn: Literal["gelu", "swiglu"] = "swiglu"
