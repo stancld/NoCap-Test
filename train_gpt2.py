@@ -12,8 +12,8 @@ import torch.distributed as dist
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from config import GPTConfig
 from model import GPT
+from training_configurations import MODEL_CONFIGS
 
 with open(sys.argv[0]) as f:
     code = f.read()
@@ -261,31 +261,7 @@ if __name__ == "__main__":
     x, y = train_loader.next_batch()
 
     # init the model from scratch
-    num_vocab = 50257
-    model_config = {
-        "baseline": GPTConfig(
-            vocab_size=num_vocab,
-            n_layer=12,
-            n_head=12,
-            n_embd=768,
-            n_kv_head=None,
-            activation_fn="gelu",
-        ),  # 124M GPT-2
-        "baseline-swiglu": GPTConfig(
-            vocab_size=num_vocab,
-            n_layer=12,
-            n_head=12,
-            n_embd=768,
-            n_kv_head=None,
-            activation_fn="swiglu",
-        ),  # 124M GPT-2
-        "d12": GPTConfig(
-            vocab_size=num_vocab, n_layer=12, n_head=12, n_embd=768, n_kv_head=4
-        ),  # 124M GPT-2
-        "d24": GPTConfig(vocab_size=num_vocab, n_layer=24, n_head=16, n_embd=1024, n_kv_head=4),
-        "d36": GPTConfig(vocab_size=num_vocab, n_layer=36, n_head=20, n_embd=1280, n_kv_head=4),
-        "d48": GPTConfig(vocab_size=num_vocab, n_layer=48, n_head=25, n_embd=1600, n_kv_head=5),
-    }[args.model]
+    model_config = MODEL_CONFIGS[args.model]
     model = GPT(model_config)
     model = model.train().cuda()
     if hasattr(config, "coordinate_descent_tuning"):
