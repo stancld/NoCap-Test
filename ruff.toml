@@ -31,7 +31,6 @@ extend-select = [
     "RUF",  # ruff-specific rules
     "SIM",  # flake8-simplify
     "T10",  # breakpoint
-    "TID252",  # absolute imports
     "TCH",  # type-checking
     "UP",  # pyupgrade
 ]

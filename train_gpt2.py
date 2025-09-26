@@ -16,6 +16,8 @@ from torch import nn
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from activation import SwiGLU
+
 with open(sys.argv[0]) as f:
     code = f.read()
 
@@ -93,28 +95,16 @@ class CausalSelfAttention(nn.Module):
         return self.c_proj(y)
 
 
-class MLP(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
-
-    def forward(self, x):
-        x = self.c_fc(x)
-        x = F.gelu(x)
-        return self.c_proj(x)
-
-
 class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.attn = CausalSelfAttention(config)
-        self.mlp = MLP(config)
+        self.swiglu = SwiGLU(config.n_embd, 4 * config.n_embd)
         self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
 
     def forward(self, x):
         x = x + self.attn_scale * self.attn(rmsnorm(x))
-        return x + self.mlp(rmsnorm(x))
+        return x + self.swiglu(rmsnorm(x))
 
 
 # -----------------------------------------------------------------------------
