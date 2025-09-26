@@ -9,27 +9,27 @@ This project is a fork of [Modded-NanoGPT](https://github.com/KellerJordan/modde
 ---
 ## 📌 About BottleCapAI
 
-At **BottleCapAI**, we’re making large language models **radically more efficient** — aiming for **100× improvements** over today’s approaches. 🚀  
+At **BottleCapAI**, we’re making large language models **radically more efficient** — aiming for **100× improvements** over today’s approaches. 🚀
 
 ### 👥 Founders
-- Tomas Mikolov – creator of *word2vec*, pioneer of neural language models.  
-- Jaroslav Beck – co-founder of *Beat Games* (*Beat Saber*, 10M+ copies sold, acquired by Meta).  
+- Tomas Mikolov – creator of *word2vec*, pioneer of neural language models.
+- Jaroslav Beck – co-founder of *Beat Games* (*Beat Saber*, 10M+ copies sold, acquired by Meta).
 - David Herel – creator of Thinking Tokens, co-founder of an AI trading startup, and Amazon Alexa Prize finalist.
 
 ### 🌍 Our vision
-Training frontier LLMs costs **tens of millions** today. Our new algorithms already cut that by **~50%** — and we’re just getting started. We’re building a European hub to push AI forward through **algorithms, not brute force**.  
- 
-📧 **hey(at)bottlecapai.com** · 🌐 [bottlecapai.com](https://www.bottlecapai.com)  
+Training frontier LLMs costs **tens of millions** today. Our new algorithms already cut that by **~50%** — and we’re just getting started. We’re building a European hub to push AI forward through **algorithms, not brute force**.
+
+📧 **hey(at)bottlecapai.com** · 🌐 [bottlecapai.com](https://www.bottlecapai.com)
 
 ---
 
 ## 🏆 Prizes & Deadline
 
-- **1st place:** $3,000 USD  
-- **2nd place:** $2,000 USD  
-- **3rd place:** $1,000 USD  
+- **1st place:** $3,000 USD
+- **2nd place:** $2,000 USD
+- **3rd place:** $1,000 USD
 
-**Submission deadline:** **11.11.2025** 
+**Submission deadline:** **11.11.2025**
 
 Prizes are awarded based on the best validated results shared via the submission process below. Ties may be broken by total training time and clarity of write-up.
 
@@ -38,7 +38,7 @@ Prizes are awarded based on the best validated results shared via the submission
 
 ## Objective
 
-Prototype your idea on a subset of the **FineWeb** dataset using **1 GPU**.  
+Prototype your idea on a subset of the **FineWeb** dataset using **1 GPU**.
 **(Optional) goal:** reach a validation loss of **≤ 3.3821** faster than the baseline.
 
 You can achieve this by:
@@ -49,7 +49,7 @@ You can achieve this by:
 
 ## What's the point?
 
-We're not here to optimize learning rates, CUDA kernels, or torch.compile flags.  
+We're not here to optimize learning rates, CUDA kernels, or torch.compile flags.
 We're here to explore **algorithmic ideas that might scale**.
 
 This benchmark is meant for:
@@ -70,17 +70,17 @@ You're **not** expected to:
 - Do 50 runs to grid search Adam betas
 - Benchmark arcane PyTorch flags
 - Copy speedups from [Modded-NanoGPT](https://github.com/KellerJordan/modded-nanogpt)
-- Modify a specific hidden layer size to align better with the number of TensorCores on your GPU 
+- Modify a specific hidden layer size to align better with the number of TensorCores on your GPU
 
 We're interested in your own ideas, not how well you can copy other's. These ideas should be general and work on different setups and not be hardcoded to a very specific one.
 
-You have a budget of **5B** tokens available for training, but the baseline only uses **2.5B**, so you've got room to train on more data if you make your model faster, or on less but *better* data. 
+You have a budget of **5B** tokens available for training, but the baseline only uses **2.5B**, so you've got room to train on more data if you make your model faster, or on less but *better* data.
 
 The dataset is pre-tokenized so that you don't have to do that yourself (saves time) but if you want to explore the original text, you can decode it using the GPT-2 tokenizer (`tiktoken.get_encoding("gpt2")`).
 
 ---
 
-## Running the baseline 
+## Running the baseline
 
 To run the baseline, run the following commands.
 ```bash
@@ -131,10 +131,10 @@ git bundle create <first name>-<last name>.bundle --all
 ```
 Then send us your .bundle file to hey(at)bottlecapai.com with subject in format: \<first name\>-\<last name\> \<percentage speedup (dont worry if it's negative)\>.
 
-**Didn’t beat the baseline?** No worries – send the bundle anyway **plus a short `IDEA.md`** describing:  
-• what you tried & why 
-• what worked 
-• what didn’t.  
+**Didn’t beat the baseline?** No worries – send the bundle anyway **plus a short `IDEA.md`** describing:
+• what you tried & why
+• what worked
+• what didn’t.
 
 **Beat the baseline?** Great! Add a `RESULTS.md` with timing, settings, and hardware so others can reproduce it.
 
@@ -148,7 +148,7 @@ While this project is designed to run on **1 GPU**, there are a few things to ke
 - Batch Size, Sequence Length and Gradient Accumulation:
   The current setup requires ~ 13GB of GPU memory, which might not be available to you (if you have no GPU we suggest using [Google Colab](!https://colab.research.google.com/)), in which case, you might need to tune down some hyperparameters. We recommend starting with validation batch size - this one will not affect performance but validation will take a bit longer. Next, you might tune down batch size which you might then compensate by increasing gradient accumulation to retain the same effective batch size, be careful about changing learning rate and other hyperparameters should you change effective batch size.
 
-- **torch.compile Considerations:**  
+- **torch.compile Considerations:**
   On some RTX cards, aggressive kernel auto-tuning via `torch.compile` can lead to shared memory issues. If you encounter errors or persistent warnings (e.g., about insufficient SMs for max autotune GEMM mode), you may have to **disable `torch.compile`** or adjust your model settings accordingly. Although this may lead to slightly slower performance, it typically resolves hardware compatibility issues.
 
 - Multi-GPU Runs:
@@ -159,4 +159,3 @@ While this project is designed to run on **1 GPU**, there are a few things to ke
 ### Comment on the target metric
 
 The target metric is cross-entropy loss on the FineWeb val set. The goal of the speedrun is to obtain a probability model of language which assigns a probability of at least `math.exp(-3.3821 * 1048576)` to the first 1,048,576 tokens of the FineWeb valset. Hence, we allow evaluation at any sequence length, so long as we still have a valid probability model of language on the **entire** validation set.
-
