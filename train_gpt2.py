@@ -85,7 +85,9 @@ class Block(nn.Module):
 class BaselineBlock(nn.Module):
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
-        self.attn = CausalSelfAttention(config)
+        self.attn = (
+            CausalSelfAttentionGQA(config) if config.n_kv_head else CausalSelfAttention(config)
+        )
         self.mlp = MLP(config)
         self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
 
