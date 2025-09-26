@@ -159,3 +159,11 @@ While this project is designed to run on **1 GPU**, there are a few things to ke
 ### Comment on the target metric
 
 The target metric is cross-entropy loss on the FineWeb val set. The goal of the speedrun is to obtain a probability model of language which assigns a probability of at least `math.exp(-3.3821 * 1048576)` to the first 1,048,576 tokens of the FineWeb valset. Hence, we allow evaluation at any sequence length, so long as we still have a valid probability model of language on the **entire** validation set.
+
+
+### Docker start:
+
+```
+docker build -t nocap-test .
+docker run --gpus all -it nocap-test
+```
