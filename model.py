@@ -63,9 +63,6 @@ class GPT(nn.Module):
     def forward(
         self, idx: torch.Tensor, targets: torch.Tensor | None = None, return_logits: bool = True
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
-        _b, t = idx.size()
-        _pos = torch.arange(0, t, dtype=torch.long, device=idx.device)  # shape (t)
-
         # forward the GPT model itself
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
 
