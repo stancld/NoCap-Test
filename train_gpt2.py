@@ -214,7 +214,6 @@ if __name__ == "__main__":
 
     # args error checking and convenience variables
     B, T = args.batch_size, args.sequence_length
-    assert args.model in {"d12", "d24", "d36", "d48", "baseline"}
     # set up DDP (distributed data parallel). torchrun sets this env variable
     # use of DDP atm demands CUDA, we set the device appropriately according to rank
     assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
@@ -271,6 +270,14 @@ if __name__ == "__main__":
             n_embd=768,
             n_kv_head=None,
             activation_fn="gelu",
+        ),  # 124M GPT-2
+        "baseline-swiglu": GPTConfig(
+            vocab_size=num_vocab,
+            n_layer=12,
+            n_head=12,
+            n_embd=768,
+            n_kv_head=None,
+            activation_fn="swiglu",
         ),  # 124M GPT-2
         "d12": GPTConfig(
             vocab_size=num_vocab, n_layer=12, n_head=12, n_embd=768, n_kv_head=4
