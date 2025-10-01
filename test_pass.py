@@ -2,8 +2,9 @@ import pytest
 import torch
 
 from config import GPTConfig
+from gated_delta_net import GatedDeltaNet
 from gqa_attention import GroupedQueryAttention
-from train_gpt2 import BaselineBlock, Block
+from model import BaselineBlock, Block
 
 HIDDEN_DIM = 768
 
@@ -44,3 +45,11 @@ def test_gqa_block(x: torch.Tensor) -> None:
     block = Block(config)
 
     block(x)
+
+
+def test_gdn(x: torch.Tensor) -> None:
+    gdn = GatedDeltaNet(
+        num_key_heads=2, num_value_heads=2, key_head_dim=16, value_head_dim=32, n_embd=768
+    )
+
+    gdn(x)

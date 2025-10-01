@@ -6,7 +6,8 @@ import torch.nn as nn
 from activation import SwiGLU
 from attention import CausalSelfAttention
 from baseline_mlp import MLP
-from config import GPTConfig
+from config import GPTConfig, QwenGPTConfig
+from gated_delta_net import GatedDeltaNet
 from gqa_attention import CausalSelfAttentionGQA
 
 
@@ -38,10 +39,6 @@ class BaselineBlock(nn.Module):
         return x + self.mlp(rmsnorm(x))
 
 
-# -----------------------------------------------------------------------------
-# The main GPT-2 model
-
-
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig) -> None:
         super().__init__()
@@ -64,6 +61,92 @@ class GPT(nn.Module):
         self, idx: torch.Tensor, targets: torch.Tensor | None = None, return_logits: bool = True
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         # forward the GPT model itself
+        x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+
+        for block in self.transformer.h:
+            x = block(x)
+        x = rmsnorm(x)
+
+        if targets is not None:
+            # if we are given some desired targets also calculate the loss
+            logits = self.lm_head(x)
+            loss = nn.functional.cross_entropy(
+                logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1
+            )
+        else:
+            # inference-time mini-optimization: only forward the lm_head on the very last position
+            logits = self.lm_head(x[:, [-1], :])  # note: using list [-1] to preserve the time dim
+            loss = None
+
+        # there are performance reasons why not returning logits is prudent, if not needed
+        if not return_logits:
+            logits = None
+
+        return logits, loss
+
+    def configure_optimizers(
+        self, weight_decay: float, learning_rate: float, betas: tuple[float, float], device_type
+    ) -> torch.optim.Optimizer:
+        return torch.optim.AdamW(
+            self.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=betas
+        )
+
+
+class QwenBlock(nn.Module):
+    def __init__(self, config: QwenGPTConfig, layer_idx: int) -> None:
+        super().__init__()
+        self.layer_idx = layer_idx
+        self.use_attention = layer_idx in config.attention_layer_indices
+
+        if self.use_attention:
+            self.mixer = CausalSelfAttentionGQA(self._to_gpt_config(config))
+        else:
+            self.mixer = GatedDeltaNet(
+                num_key_heads=config.n_head,
+                num_value_heads=config.n_head,
+                key_head_dim=config.head_dim,
+                value_head_dim=config.head_dim,
+                n_embd=config.n_embd,
+                conv_kernel_size=config.conv_kernel_size,
+            )
+
+        self.swiglu = SwiGLU(config.n_embd, 4 * config.n_embd)
+        self.attn_scale = 1 / math.sqrt(2 * config.n_layer)
+
+    def _to_gpt_config(self, qwen_config: QwenGPTConfig) -> GPTConfig:
+        """Convert QwenGPTConfig to GPTConfig for attention layers."""
+        return GPTConfig(
+            vocab_size=qwen_config.vocab_size,
+            n_layer=qwen_config.n_layer,
+            n_head=qwen_config.n_head,
+            n_embd=qwen_config.n_embd,
+            n_kv_head=qwen_config.n_kv_head,
+            activation_fn=qwen_config.activation_fn,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.attn_scale * self.mixer(rmsnorm(x))
+        return x + self.swiglu(rmsnorm(x))
+
+
+class QwenGPT(nn.Module):
+    def __init__(self, config: QwenGPTConfig) -> None:
+        super().__init__()
+        self.config = config
+
+        self.transformer = nn.ModuleDict(
+            dict(
+                wte=nn.Embedding(config.vocab_size, config.n_embd),
+                h=nn.ModuleList([QwenBlock(config, i) for i in range(config.n_layer)]),
+            )
+        )
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.transformer.wte.weight = self.lm_head.weight  # weight tying
+
+    def forward(
+        self, idx: torch.Tensor, targets: torch.Tensor | None = None, return_logits: bool = True
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        # forward the QwenGPT model itself
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
 
         for block in self.transformer.h:

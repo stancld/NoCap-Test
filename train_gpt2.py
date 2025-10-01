@@ -12,7 +12,8 @@ import torch.distributed as dist
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from model import GPT
+from config import QwenGPTConfig
+from model import GPT, QwenGPT
 from training_configurations import MODEL_CONFIGS
 
 with open(sys.argv[0]) as f:
@@ -149,7 +150,7 @@ if __name__ == "__main__":
         "--model",
         type=str,
         default="d12",
-        help="d12|d24|d36|d48",
+        help="d12|d24|d36|d48|baseline|qwen",
     )
     # token layout for each step of the optimization
     parser.add_argument(
@@ -262,7 +263,7 @@ if __name__ == "__main__":
 
     # init the model from scratch
     model_config = MODEL_CONFIGS[args.model]
-    model = GPT(model_config)
+    model = QwenGPT(model_config) if isinstance(model_config, QwenGPTConfig) else GPT(model_config)
     model = model.train().cuda()
     if hasattr(config, "coordinate_descent_tuning"):
         config.coordinate_descent_tuning = True  # suggested by @Chillee
